@@ -12,7 +12,7 @@ uvicorn backend.app:app --reload --port 8000
 ### Optional env vars
 
 - `VT_API_KEY` (+ `VT_URL`): enable VirusTotal submission/report.
-- `TRIAGE_API_KEY` (+ `TRIAGE_URL`): enable Hatching Triage submission/report.
+- `HA_API_KEY` (+ `HA_URL`): enable Hybrid Analysis submission/report.
 - `STORE_BACKEND=redis` + `REDIS_URL`: persist scans in Redis instead of memory.
 
 ## API

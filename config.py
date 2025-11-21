@@ -13,8 +13,9 @@ MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 VT_API_KEY = os.getenv("VT_API_KEY")
 VT_URL = os.getenv("VT_URL", "https://www.virustotal.com/api/v3")
 
-TRIAGE_API_KEY = os.getenv("TRIAGE_API_KEY")
-TRIAGE_URL = os.getenv("TRIAGE_URL", "https://tria.ge/api")
+# Hybrid Analysis
+HA_API_KEY = os.getenv("HA_API_KEY")
+HA_URL = os.getenv("HA_URL", "https://www.hybrid-analysis.com/api/v2")
 
 # Storage backend selection: "memory" (default) or "redis"
 STORE_BACKEND = os.getenv("STORE_BACKEND", "memory")

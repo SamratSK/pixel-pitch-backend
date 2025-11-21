@@ -5,9 +5,15 @@ from typing import Optional
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import MAX_UPLOAD_BYTES, UPLOAD_DIR
-from .storage import ScanRecord, ScanStatus, store
-from .tasks import enqueue_scan
+# Support running as a package (backend.app) or standalone from this folder
+try:  # package-relative imports when launched with `uvicorn backend.app:app`
+    from .config import MAX_UPLOAD_BYTES, UPLOAD_DIR
+    from .storage import ScanRecord, ScanStatus, store
+    from .tasks import enqueue_scan
+except ImportError:  # direct imports when launched with `uvicorn app:app`
+    from config import MAX_UPLOAD_BYTES, UPLOAD_DIR
+    from storage import ScanRecord, ScanStatus, store
+    from tasks import enqueue_scan
 
 app = FastAPI(title="Android Malware Scanner", version="0.1.0")
 app.add_middleware(
@@ -40,9 +46,10 @@ async def create_scan(
     file: UploadFile = File(...),
     source: Optional[str] = Form(None),
 ):
-    if not file.filename.lower().endswith(".apk"):
-        raise HTTPException(status_code=400, detail="Only .apk files are accepted")
 
+    if file.filename and not file.filename.lower().endswith(".apk"):
+        raise HTTPException(status_code=400, detail="Only .apk files are accepted")
+    
     scan_id = uuid.uuid4().hex
     destination = UPLOAD_DIR / f"{scan_id}.apk"
     _save_upload(file, destination)

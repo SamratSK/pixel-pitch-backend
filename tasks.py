@@ -2,9 +2,15 @@ import threading
 from pathlib import Path
 from typing import Dict, Optional
 
-from .analyzers import dynamic_summarize, network_analyze, static_analyze
-from .integrations import triage, virustotal
-from .storage import ScanStatus, store
+# Support running as a package (backend.tasks) or standalone from this folder
+try:
+    from .analyzers import dynamic_summarize, network_analyze, static_analyze
+    from .integrations import hybrid_analysis, virustotal
+    from .storage import ScanStatus, store
+except ImportError:
+    from analyzers import dynamic_summarize, network_analyze, static_analyze
+    from integrations import hybrid_analysis, virustotal
+    from storage import ScanStatus, store
 
 
 def _score(static_result: Dict, network_result: Dict) -> Dict:
@@ -30,12 +36,12 @@ def _score(static_result: Dict, network_result: Dict) -> Dict:
 
 
 def _external_analysis(apk_path: Path) -> Dict:
-    """Optionally submit to VirusTotal/Triage if API keys are configured."""
+    """Optionally submit to VirusTotal / Hybrid Analysis if API keys are configured."""
     report: Dict[str, Optional[Dict]] = {
         "vt_submission_id": None,
         "vt_report": None,
-        "triage_submission_id": None,
-        "triage_report": None,
+        "ha_submission_id": None,
+        "ha_report": None,
     }
 
     if virustotal.client.enabled():
@@ -47,14 +53,14 @@ def _external_analysis(apk_path: Path) -> Dict:
         except Exception as exc:  # pragma: no cover
             report["vt_report"] = {"error": str(exc)}
 
-    if triage.client.enabled():
+    if hybrid_analysis.client.enabled():
         try:
-            triage_id = triage.client.submit_file(apk_path)
-            report["triage_submission_id"] = triage_id
-            if triage_id:
-                report["triage_report"] = triage.client.fetch_report(triage_id)
+            ha_id = hybrid_analysis.client.submit_file(apk_path)
+            report["ha_submission_id"] = ha_id
+            if ha_id:
+                report["ha_report"] = hybrid_analysis.client.fetch_report(ha_id)
         except Exception as exc:  # pragma: no cover
-            report["triage_report"] = {"error": str(exc)}
+            report["ha_report"] = {"error": str(exc)}
 
     return report
 
