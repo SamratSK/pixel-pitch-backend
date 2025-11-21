@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Android Malware Scanner</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #151821;
+      --accent: #8ef1c7;
+      --muted: #7b849f;
+      --text: #e8edf5;
+      --warn: #ff9f1c;
+      --error: #ff5c8d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(142, 241, 199, 0.06), transparent 30%),
+                  radial-gradient(circle at 80% 10%, rgba(255, 159, 28, 0.08), transparent 25%),
+                  var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      padding: 32px;
+    }
+    .shell {
+      width: min(1100px, 100%);
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+    }
+    h1 { margin: 0 0 8px; letter-spacing: -0.02em; }
+    p { margin: 4px 0 16px; color: var(--muted); }
+    form {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 16px;
+      grid-template-columns: 2fr 1fr;
+      align-items: center;
+    }
+    label { font-size: 14px; color: var(--muted); display: block; margin-bottom: 4px; }
+    input[type="file"], input[type="text"] {
+      width: 100%;
+      background: #0f121a;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 10px;
+    }
+    input[type="file"]::-webkit-file-upload-button {
+      background: rgba(142, 241, 199, 0.12);
+      color: var(--text);
+      border: 1px solid rgba(142, 241, 199, 0.4);
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    button {
+      grid-column: span 2;
+      background: linear-gradient(135deg, var(--accent), #61d2a4);
+      color: #0a0d14;
+      font-weight: 700;
+      border: none;
+      padding: 12px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+    button:active { transform: translateY(1px); }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 8px 0 4px;
+      font-weight: 600;
+    }
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .pill.warn { border-color: rgba(255, 159, 28, 0.5); color: var(--warn); }
+    .pill.error { border-color: rgba(255, 92, 141, 0.6); color: var(--error); }
+    .pill.ok { border-color: rgba(142, 241, 199, 0.5); color: var(--accent); }
+    pre {
+      background: #0b0d13;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 12px;
+      overflow: auto;
+      max-height: 420px;
+      margin: 0;
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 840px) {
+      form { grid-template-columns: 1fr; }
+      button { grid-column: span 1; }
+      .row { grid-template-columns: 1fr; }
+      body { padding: 16px; }
+    }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <h1>Android Malware Scanner</h1>
+    <p>Upload any file to hit the FastAPI backend, then auto-poll for scan results (static + network scrape + external VT/HA if keys set). All calls are same-origin.</p>
+
+    <form id="scan-form">
+      <div>
+        <label for="apk">File</label>
+        <input id="apk" name="file" type="file" required />
+      </div>
+      <div>
+        <label for="source">Source (optional)</label>
+        <input id="source" name="source" type="text" placeholder="e.g. QA build, sideload" />
+      </div>
+      <div>
+        <label for="apiKey">API Key (if required)</label>
+        <input id="apiKey" name="apiKey" type="text" placeholder="x-api-key value" />
+      </div>
+      <button type="submit">Upload & Scan</button>
+    </form>
+
+    <div class="status">
+      <span class="pill" id="status-pill">Idle</span>
+      <span id="scan-meta" style="color: var(--muted);"></span>
+    </div>
+
+    <div class="row">
+      <div>
+        <label style="color: var(--muted); font-size: 13px;">Live result</label>
+        <pre id="result">Waiting for a scan...</pre>
+      </div>
+      <div>
+        <label style="color: var(--muted); font-size: 13px;">Log</label>
+        <pre id="log"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('scan-form');
+    const resultEl = document.getElementById('result');
+    const logEl = document.getElementById('log');
+    const statusPill = document.getElementById('status-pill');
+    const scanMeta = document.getElementById('scan-meta');
+    let pollTimer = null;
+
+    function setPill(text, state) {
+      statusPill.textContent = text;
+      statusPill.className = 'pill ' + (state || '');
+    }
+
+    function log(line) {
+      const stamp = new Date().toLocaleTimeString();
+      logEl.textContent = `[${stamp}] ${line}\n` + logEl.textContent;
+    }
+
+    async function poll(scanId) {
+      try {
+        const headers = {};
+        const apiKey = document.getElementById('apiKey').value;
+        if (apiKey) headers['x-api-key'] = apiKey;
+        const res = await fetch(`/scan/${scanId}`, { headers });
+        if (!res.ok) throw new Error(`Status ${res.status}`);
+        const data = await res.json();
+        resultEl.textContent = JSON.stringify(data, null, 2);
+        scanMeta.textContent = `scan_id: ${scanId}`;
+
+        if (data.status === 'finished') {
+          setPill('Finished', 'ok');
+          log('Scan complete.');
+          return;
+        }
+        if (data.status === 'failed') {
+          setPill('Failed', 'error');
+          log('Scan failed.');
+          return;
+        }
+        setPill(data.status, 'warn');
+        pollTimer = setTimeout(() => poll(scanId), 1500);
+      } catch (err) {
+        setPill('Error', 'error');
+        log(`Error polling: ${err.message}`);
+      }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+      const file = document.getElementById('apk').files[0];
+      if (!file) {
+        alert('Select an APK first.');
+        return;
+      }
+      const fd = new FormData();
+      fd.append('file', file);
+      const source = document.getElementById('source').value;
+      if (source) fd.append('source', source);
+
+      setPill('Uploading', 'warn');
+      log(`Uploading ${file.name}...`);
+      resultEl.textContent = 'Waiting for response...';
+
+      try {
+        const headers = {};
+        const apiKey = document.getElementById('apiKey').value;
+        if (apiKey) headers['x-api-key'] = apiKey;
+        const res = await fetch('/scan', { method: 'POST', body: fd, headers });
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        log(`Enqueued with scan_id ${data.scan_id}`);
+        setPill('Queued', 'warn');
+        poll(data.scan_id);
+      } catch (err) {
+        setPill('Error', 'error');
+        log(`Upload failed: ${err.message}`);
+        resultEl.textContent = 'Upload failed. Check log.';
+      }
+    });
+  </script>
+</body>
+</html>

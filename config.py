@@ -15,7 +15,19 @@ VT_URL = os.getenv("VT_URL", "https://www.virustotal.com/api/v3")
 
 # Hybrid Analysis
 HA_API_KEY = os.getenv("HA_API_KEY")
-HA_URL = os.getenv("HA_URL", "https://www.hybrid-analysis.com/api/v2")
+# Default to apex domain to avoid redirects that some clients treat as errors.
+HA_URL = os.getenv("HA_URL", "https://hybrid-analysis.com/api/v2")
+
+# YARA rules directory (optional)
+YARA_RULES_DIR = os.getenv("YARA_RULES_DIR")
 
 # Storage backend selection: "memory" (default) or "redis"
 STORE_BACKEND = os.getenv("STORE_BACKEND", "memory")
+# Redis connection and queue
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_QUEUE_NAME = os.getenv("REDIS_QUEUE_NAME", "apk_scan_jobs")
+
+# Auth + rate limiting
+API_KEY = os.getenv("API_KEY")  # if unset, auth is disabled
+RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "60"))
+RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))  # seconds

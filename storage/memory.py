@@ -63,5 +63,16 @@ class ScanStore:
                 record.error = error
                 record.updated_at = time.time()
 
+    def update_external(self, scan_id: str, provider: str, payload: dict) -> None:
+        with self._lock:
+            record = self._records.get(scan_id)
+            if not record:
+                return
+            record.result = record.result or {}
+            external = record.result.get("external", {}) if isinstance(record.result, dict) else {}
+            external[provider] = payload
+            record.result["external"] = external
+            record.updated_at = time.time()
+
 
 store = ScanStore()

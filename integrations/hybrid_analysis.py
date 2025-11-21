@@ -10,7 +10,8 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-HA_URL = os.getenv("HA_URL", "https://www.hybrid-analysis.com/api/v2")
+# Default to apex domain to avoid 301s that some HTTP clients treat as errors.
+HA_URL = os.getenv("HA_URL", "https://hybrid-analysis.com/api/v2")
 HA_API_KEY = os.getenv("HA_API_KEY")
 
 
@@ -34,7 +35,7 @@ class HybridAnalysisClient:
     def submit_file(self, apk_path: Path) -> Optional[str]:
         if not self.enabled():
             return None
-        with httpx.Client(timeout=60.0) as client, apk_path.open("rb") as f:
+        with httpx.Client(timeout=60.0, follow_redirects=True) as client, apk_path.open("rb") as f:
             resp = client.post(
                 f"{self.base_url}/submit/file",
                 headers=self._headers(),
@@ -48,7 +49,7 @@ class HybridAnalysisClient:
     def fetch_report(self, job_id: str) -> Optional[Dict[str, Any]]:
         if not self.enabled():
             return None
-        with httpx.Client(timeout=20.0) as client:
+        with httpx.Client(timeout=20.0, follow_redirects=True) as client:
             resp = client.get(f"{self.base_url}/report/{job_id}/summary", headers=self._headers())
             if resp.status_code == 404:
                 return None

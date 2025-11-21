@@ -6,11 +6,15 @@ from typing import Dict, Optional
 try:
     from .analyzers import dynamic_summarize, network_analyze, static_analyze
     from .integrations import hybrid_analysis, virustotal
+    from .job_queue import Worker
     from .storage import ScanStatus, store
+    from . import metrics
 except ImportError:
     from analyzers import dynamic_summarize, network_analyze, static_analyze
     from integrations import hybrid_analysis, virustotal
+    from job_queue import Worker
     from storage import ScanStatus, store
+    import metrics
 
 
 def _score(static_result: Dict, network_result: Dict) -> Dict:
@@ -65,7 +69,17 @@ def _external_analysis(apk_path: Path) -> Dict:
     return report
 
 
+def _record_metrics(scan_id: str, result: Optional[Dict], status: ScanStatus) -> None:
+    record = store.get(scan_id)
+    duration = None
+    if record and record.updated_at and record.created_at:
+        duration = record.updated_at - record.created_at
+    flagged = metrics.infer_flagged(result if status == ScanStatus.finished else None)
+    metrics.stats.record(flagged=flagged, duration_seconds=duration)
+
+
 def _run_scan(scan_id: str, apk_path: Path, source: Optional[str]) -> None:
+    apk_path = Path(apk_path)
     store.update_status(scan_id, ScanStatus.running)
 
     try:
@@ -84,10 +98,20 @@ def _run_scan(scan_id: str, apk_path: Path, source: Optional[str]) -> None:
             "heuristic": heuristic,
         }
         store.set_result(scan_id, result)
+        _record_metrics(scan_id, result, ScanStatus.finished)
     except Exception as exc:  # pragma: no cover
         store.set_error(scan_id, str(exc))
+        _record_metrics(scan_id, None, ScanStatus.failed)
+
+
+queue_worker = Worker(_run_scan)
+queue_worker.start()
 
 
 def enqueue_scan(scan_id: str, apk_path: Path, source: Optional[str]) -> None:
-    worker = threading.Thread(target=_run_scan, args=(scan_id, apk_path, source), daemon=True)
-    worker.start()
+    # If Redis queue is available, push to worker; else fallback to local thread
+    if queue_worker.redis_queue.available():
+        queue_worker.enqueue({"scan_id": scan_id, "apk_path": str(apk_path), "source": source})
+    else:
+        worker = threading.Thread(target=_run_scan, args=(scan_id, apk_path, source), daemon=True)
+        worker.start()

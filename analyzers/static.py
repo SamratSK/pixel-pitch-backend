@@ -1,8 +1,12 @@
 import hashlib
+import mimetypes
 import re
 import zipfile
 from pathlib import Path
 from typing import Dict, List
+
+from .manifest import analyze as manifest_analyze
+from .yara_scan import scan as yara_scan
 
 
 SUSPICIOUS_STRINGS = [
@@ -41,6 +45,8 @@ def analyze(apk_path: Path) -> Dict:
     file_count = 0
     has_native_code = False
     package_entries: List[str] = []
+    mime_guess, _ = mimetypes.guess_type(apk_path.name)
+    magic = None
 
     try:
         with zipfile.ZipFile(apk_path) as zf:
@@ -48,8 +54,9 @@ def analyze(apk_path: Path) -> Dict:
             file_count = len(infos)
             package_entries = [i.filename for i in infos]
             has_native_code = any(name.endswith(".so") for name in package_entries)
+            magic = "zip"
     except zipfile.BadZipFile:
-        # APK is just a zip; if parsing fails, fall back to minimal metadata
+        # If parsing fails, fall back to minimal metadata
         file_count = 0
         package_entries = []
         has_native_code = False
@@ -57,13 +64,19 @@ def analyze(apk_path: Path) -> Dict:
     corpus_strings = _collect_strings(apk_path)
     suspicious_hits = sorted({s for s in corpus_strings if any(sig in s.lower() for sig in SUSPICIOUS_STRINGS)})
     url_hits = sorted(set(re.findall(r"https?://[\w\.-/:#?=&%]+", "\n".join(corpus_strings))))
+    manifest = manifest_analyze(apk_path) if magic == "zip" or apk_path.suffix.lower() == ".apk" else {"parsed": False}
+    yara_result = yara_scan(apk_path)
 
     return {
         "sha256": checksum,
         "size_bytes": size_bytes,
         "file_count": file_count,
         "has_native_code": has_native_code,
+        "mime_guess": mime_guess,
+        "file_magic": magic,
         "suspicious_strings": suspicious_hits[:50],  # cap to keep responses tidy
         "url_candidates": url_hits[:50],
         "package_entries_sample": package_entries[:50],
+        "manifest": manifest,
+        "yara": yara_result,
     }
